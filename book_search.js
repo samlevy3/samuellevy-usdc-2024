@@ -75,10 +75,12 @@ function checkForSearchTermStartingAtLine(lineNumber, content, searchTerm, isSta
         for (let i = searchTerm.length - 1; i >= 0; i--) {
             let searchTermSubstring = searchTerm.substring(0, i);
             let lineEndsInDash = line[line.length - 1] === '-'; 
-            let validIndexOfMatch = line.indexOf(searchTermSubstring) === (line.length - searchTermSubstring.length); 
-            let validIndexOfMatchIgnoringDash = lineEndsInDash && line.substring(0, line.length - 1).indexOf(searchTermSubstring) === (line.length - 1 - searchTermSubstring.length); 
+            let indexOfSearchString = line.indexOf(searchTermSubstring); 
+            let validIndexOfMatch = indexOfSearchString >= 0 && indexOfSearchString === (line.length - searchTermSubstring.length); 
+            let validIndexOfMatchIgnoringDash = lineEndsInDash && indexOfSearchString >= 0 && indexOfSearchString === (line.length - searchTermSubstring.length - 1); 
             if (validIndexOfMatch || validIndexOfMatchIgnoringDash) {
-                if (checkForSearchTermStartingAtLine(lineNumber + 1, content, searchTerm.substring(i).trim(), true)) {
+                // Found partial match, recursively check remaining lines to see they match rest of search term 
+                if (checkForSearchTermStartingAtLine(lineNumber + 1, content, searchTerm.substring(i).trim(), false)) {
                     return true; 
                 }
             }   
@@ -100,11 +102,14 @@ function checkForSearchTermStartingAtLine(lineNumber, content, searchTerm, isSta
         }
         // Check last character in line, if it doesn't match and last character isn't a '-', return false, otherwise, 
         // we assume the match could continue onto next line due to a word break 
-        if (line[i] !== searchTerm[i] && searchTerm[i] !== '-') {
+        if (line[i] !== searchTerm[i] && line[i] !== '-') {
             return false; 
-        } 
-        // Check next line with the remaining part of searchTerm to match 
-        return checkForSearchTermStartingAtLine(lineNumber + 1, content, searchTerm.substring(i + 1).trim(), continued); 
+        }  else if (line[i] !== searchTerm[i] && line[i] === '-'){
+            // If last character in line is "-" assume word continues onto next line  and move character pointer back to ignore dash 
+            i--; 
+        }
+        // Recursively next line with the remaining part of searchTerm to match 
+        return checkForSearchTermStartingAtLine(lineNumber + 1, content, searchTerm.substring(i + 1).trim(), false); 
     }
 }
 
@@ -180,7 +185,7 @@ const testBookOne =
             {
                 "Page": 1,
                 "Line": 4,
-                "Text": "fellowship through to work at the US government called the USDC"
+                "Text": "fellowship to work at the US government called the USDC"
             },
             {
                 "Page": 2,
@@ -239,16 +244,39 @@ const testBookTwo =
 
 
 /** 
- * Book Test Two
+ * Test Book Three
  * - An empty book 
  */
-const emptyBook = [
+const emptyBook = 
     {
         "Title": "Empty Book",
-        "ISBN": "1",
+        "ISBN": "2",
         "Content": [] 
     }
-]
+
+
+/** 
+ * Test Book Four 
+ * - Book with random text in between sentence that spans multiple lines 
+ */
+const interruptedBook = 
+    {
+        "Title": "Interrupted Book",
+        "ISBN": "3",
+        "Content": [
+            {
+                "Page": 1,
+                "Line": 1,
+                "Text": "I hope you are ha"
+            },
+            {
+                "Page": 1,
+                "Line": 2,
+                "Text": "interruptedtextving a lovely day :)"
+            }
+        ] 
+    }
+
 
 /*
  _   _ _   _ ___ _____   _____ _____ ____ _____ ____  
@@ -311,11 +339,11 @@ if (JSON.stringify(test3out) === JSON.stringify(test3result)) {
 // Multiple lines (the whole book)
 const test4result = findSearchTermInBooks("Once upon a time. There was a developer named Sam who loved the intersection of " +
                         "technology, law, and sociology. He\'s really interested in public interest technology and found a " +
-                        "fellowship through to work at the US government called the USDC that he really hopes he gets!", [testBookOne]); 
+                        "fellowship to work at the US government called the USDC that he really hopes he gets!", [testBookOne]); 
 const test4out = {
     "SearchTerm": "Once upon a time. There was a developer named Sam who loved the intersection of " +
         "technology, law, and sociology. He\'s really interested in public interest technology and found a " +
-        "fellowship through to work at the US government called the USDC that he really hopes he gets!",
+        "fellowship to work at the US government called the USDC that he really hopes he gets!",
     "Results": [
         {
             "ISBN": "0",
@@ -468,7 +496,7 @@ if (JSON.stringify(test12out) === JSON.stringify(test12result)) {
     console.log("Received:", test12result);
 }
 
-// Null scanned text term
+// Null scanned text
 const test13result = findSearchTermInBooks("null", null); 
 const test13out = {
     "SearchTerm": "null",
@@ -480,4 +508,18 @@ if (JSON.stringify(test13out) === JSON.stringify(test13result)) {
     console.log("FAIL: Test 13");
     console.log("Expected:", test13out);
     console.log("Received:", test13result);
+}
+
+// Interupted search term
+const test14result = findSearchTermInBooks("I hope you are having a lovely day :)", [interruptedBook]); 
+const test14out = {
+    "SearchTerm": "I hope you are having a lovely day :)",
+    "Results": []
+};
+if (JSON.stringify(test14out) === JSON.stringify(test14result)) {
+    console.log("PASS: Test 14");
+} else {
+    console.log("FAIL: Test 14");
+    console.log("Expected:", test14out);
+    console.log("Received:", test14result);
 }

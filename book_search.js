@@ -72,18 +72,21 @@ function checkForSearchTermStartingAtLine(lineNumber, content, searchTerm, isSta
             return true; 
         }
         // If not complete match, must check to see if this line starts a match that continues onto other lines. 
-        for (let i = searchTerm.length - 1; i >= 0; i--) {
+        for (let i = searchTerm.length - 1; i > 0; i--) {
             let searchTermSubstring = searchTerm.substring(0, i);
             let lineEndsInDash = line[line.length - 1] === '-'; 
             let indexOfSearchString = line.indexOf(searchTermSubstring); 
-            let validIndexOfMatch = indexOfSearchString >= 0 && indexOfSearchString === (line.length - searchTermSubstring.length); 
-            let validIndexOfMatchIgnoringDash = lineEndsInDash && indexOfSearchString >= 0 && indexOfSearchString === (line.length - searchTermSubstring.length - 1); 
-            if (validIndexOfMatch || validIndexOfMatchIgnoringDash) {
-                // Found partial match, recursively check remaining lines to see they match rest of search term 
-                if (checkForSearchTermStartingAtLine(lineNumber + 1, content, searchTerm.substring(i).trim(), false)) {
-                    return true; 
-                }
-            }   
+            while (indexOfSearchString != -1){
+                let validIndexOfMatch = indexOfSearchString >= 0 && indexOfSearchString === (line.length - searchTermSubstring.length); 
+                let validIndexOfMatchIgnoringDash = lineEndsInDash && indexOfSearchString >= 0 && indexOfSearchString === (line.length - searchTermSubstring.length - 1); 
+                if (validIndexOfMatch || validIndexOfMatchIgnoringDash) {
+                    // Found partial match, recursively check remaining lines to see they match rest of search term 
+                    if (checkForSearchTermStartingAtLine(lineNumber + 1, content, searchTerm.substring(i).trim(), false)) {
+                        return true; 
+                    }
+                }  
+                indexOfSearchString = line.indexOf(searchTermSubstring, indexOfSearchString + 1); 
+            }
         }
         return false; 
     } else {
@@ -107,6 +110,8 @@ function checkForSearchTermStartingAtLine(lineNumber, content, searchTerm, isSta
         }  else if (line[i] !== searchTerm[i] && line[i] === '-'){
             // If last character in line is "-" assume word continues onto next line  and move character pointer back to ignore dash 
             i--; 
+        } else if (line[i] === searchTerm[i] && i === searchTerm.length - 1) {
+            return true; 
         }
         // Recursively next line with the remaining part of searchTerm to match 
         return checkForSearchTermStartingAtLine(lineNumber + 1, content, searchTerm.substring(i + 1).trim(), false); 
@@ -277,6 +282,27 @@ const interruptedBook =
         ] 
     }
 
+/** 
+ * Test Book Five 
+ * - First line has multiple valid prefixes
+ */
+const prefixBook = 
+{
+    "Title": "Prefix Book",
+    "ISBN": "4",
+    "Content": [
+        {
+            "Page": 1,
+            "Line": 1,
+            "Text": "ababab-"
+        },
+        {
+            "Page": 1,
+            "Line": 2,
+            "Text": "abc"
+        }
+    ] 
+}
 
 /*
  _   _ _   _ ___ _____   _____ _____ ____ _____ ____  
@@ -522,4 +548,24 @@ if (JSON.stringify(test14out) === JSON.stringify(test14result)) {
     console.log("FAIL: Test 14");
     console.log("Expected:", test14out);
     console.log("Received:", test14result);
+}
+
+// Multiple matching prefixes
+const test15result = findSearchTermInBooks("ababc", [prefixBook]); 
+const test15out = {
+    "SearchTerm": "ababc",
+    "Results": [
+        {
+            "ISBN": "4",
+            "Page": 1,
+            "Line": 1
+        }
+    ]
+};
+if (JSON.stringify(test15out) === JSON.stringify(test15result)) {
+    console.log("PASS: Test 15");
+} else {
+    console.log("FAIL: Test 15");
+    console.log("Expected:", test15out);
+    console.log("Received:", test15result);
 }

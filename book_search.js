@@ -34,14 +34,29 @@ function findSearchTermInBooks(searchTerm, scannedTextObj) {
 
     for (let book of scannedTextObj) {
         for (let i = 0; i < book.Content.length; i++) {
-            if (checkForSearchTermStartingAtLine(i, book.Content, searchTerm, true)) {
-                let line = book.Content[i]; 
-                let res = {
-                    "ISBN": book.ISBN, 
-                    "Page": line.Page,
-                    "Line": line.Line 
+            let line = book.Content[i]; 
+            let indexOfStartSearchTerm = line.Text.indexOf(searchTerm[0], 0); 
+            // Iterate over every index in line where a valid match could start 
+            while (indexOfStartSearchTerm !== -1) {
+                // If search term is 1 character long and we found a valid index, then we know there is a match on this line 
+                let matchFound = searchTerm.length === 1; 
+                if (!matchFound && indexOfStartSearchTerm == line.Text.length - 1) {
+                    // At the end of a line so need to move to next line and trim because there is no whitespace between lines 
+                    matchFound = checkForSearchTermStartingAtIndexInLine(i + 1, 0, searchTerm.substring(1).trim(), book.Content)
+                } else if (!matchFound) {
+                    // Stay on this line and don't trim because we want to match whitespace 
+                    matchFound = checkForSearchTermStartingAtIndexInLine(i, indexOfStartSearchTerm + 1, searchTerm.substring(1), book.Content); 
                 }
-                result.Results.push(res); 
+                if (matchFound) {
+                    let res = {
+                        "ISBN": book.ISBN, 
+                        "Page": line.Page,
+                        "Line": line.Line 
+                    }
+                    result.Results.push(res); 
+                    break; 
+                }
+                indexOfStartSearchTerm = line.Text.indexOf(searchTerm[0], indexOfStartSearchTerm + 1); 
             }
         }
     }
@@ -49,73 +64,52 @@ function findSearchTermInBooks(searchTerm, scannedTextObj) {
 }
 
 /**
- * Searches for a match starting at a particular line in a book. If the match continues over multiple lines,
- * this function will return true if a complete match was found that starts at the starting line. 
+ * Searches for a search term starting at a given index in a given line in a book and returns true if the search term was found. 
+ * A valid match can span multiple lines. 
  * @param {number} lineNumber - The line number to look for a match on 
- * @param {JSON} content - Content of a book 
+ * @param {number} index - index in line to start looking 
  * @param {string} searchTerm - The part of the search term we are looking for a match for on this line
- * @param {boolean} isStartingLine - true if we are starting the search on this line, false if we are continuing the search from a prev line
- * @returns {boolean} - true if a valid match with the searchTerm starts on this line, false otherwise 
+ * @param {JSON} content - content of book 
+ * @returns {boolean} - true if a valid match with the searchTerm starts on this line at the index, false otherwise 
  * */ 
-function checkForSearchTermStartingAtLine(lineNumber, content, searchTerm, isStartingLine) {
+function checkForSearchTermStartingAtIndexInLine(lineNumber, index, searchTerm, content) {
     // Base case, if no more lines to search, means there is no match 
     if (lineNumber >= content.length) {
         return false; 
     }
     let line = content[lineNumber].Text; 
-    
-    // If this is the first line we are starting to search in we have to do extra checks because the 
-    // search term could start at any point in the first line 
-    if (isStartingLine) {
-        // If there is complete match in this line, return true 
-        if (line.includes(searchTerm)) {
-            return true; 
-        }
-        // If not complete match, must check to see if this line starts a match that continues onto other lines. 
-        for (let i = searchTerm.length - 1; i > 0; i--) {
-            let searchTermSubstring = searchTerm.substring(0, i);
-            let lineEndsInDash = line[line.length - 1] === '-'; 
-            let indexOfSearchString = line.indexOf(searchTermSubstring); 
-            while (indexOfSearchString != -1){
-                let validIndexOfMatch = indexOfSearchString >= 0 && indexOfSearchString === (line.length - searchTermSubstring.length); 
-                let validIndexOfMatchIgnoringDash = lineEndsInDash && indexOfSearchString >= 0 && indexOfSearchString === (line.length - searchTermSubstring.length - 1); 
-                if (validIndexOfMatch || validIndexOfMatchIgnoringDash) {
-                    // Found partial match, recursively check remaining lines to see they match rest of search term 
-                    if (checkForSearchTermStartingAtLine(lineNumber + 1, content, searchTerm.substring(i).trim(), false)) {
-                        return true; 
-                    }
-                }  
-                indexOfSearchString = line.indexOf(searchTermSubstring, indexOfSearchString + 1); 
-            }
-        }
-        return false; 
-    } else {
-        // If this is not the starting line, then the remaining part of the searchTerm to match must start at the beginning of the line 
-        // and either be match completely on this line, or continue onto the next line 
-        let i = 0;
-        // Stop if a complete match has been found or one character before end of line to handle the special case with '-' 
-        for (i; i < line.length - 1 && i <searchTerm.length; i++) {
-            if (line[i] !== searchTerm[i]) {
-                return false; 
-            }
-        }
-        // We found a match on this line so return true 
-        if (i === searchTerm.length) {
-            return true; 
-        }
-        // Check last character in line, if it doesn't match and last character isn't a '-', return false, otherwise, 
-        // we assume the match could continue onto next line due to a word break 
-        if (line[i] !== searchTerm[i] && line[i] !== '-') {
+
+    // Start at the given index in the line 
+    let i = index;
+    // Stop if a complete match has been found or one character before end of line to handle the special case with '-' 
+    for (i; i < line.length - 1 && i - index < searchTerm.length; i++) {
+        if (line[i] !== searchTerm[i - index]) {
             return false; 
-        }  else if (line[i] !== searchTerm[i] && line[i] === '-'){
-            // If last character in line is "-" assume word continues onto next line  and move character pointer back to ignore dash 
-            i--; 
-        } else if (line[i] === searchTerm[i] && i === searchTerm.length - 1) {
-            return true; 
         }
-        // Recursively next line with the remaining part of searchTerm to match 
-        return checkForSearchTermStartingAtLine(lineNumber + 1, content, searchTerm.substring(i + 1).trim(), false); 
     }
+    searchTermIndex = i - index; 
+
+    if (searchTermIndex === searchTerm.length) {
+        // We found a commplete match on this line so return true 
+        return true; 
+    }
+
+    if (line[i] === searchTerm[searchTermIndex] && searchTermIndex === searchTerm.length - 1) {
+        // The last character in the search term matches 
+        return true; 
+    }
+
+    // Check last character in line, if it doesn't match and last character isn't a '-', return false, otherwise, 
+    // we assume the match could continue onto next line due to a word break 
+    if (line[i] !== searchTerm[searchTermIndex] && line[i] !== '-') {
+        return false; 
+    }  else if (line[i] !== searchTerm[searchTermIndex] && line[i] === '-'){
+        // If last character in line is "-" assume word continues onto next line and move character pointer back to ignore dash 
+        i--; 
+        searchTermIndex--; 
+    } 
+    // Recursively next line with the remaining part of searchTerm to match 
+    return checkForSearchTermStartingAtIndexInLine(lineNumber + 1, 0, searchTerm.substring(searchTermIndex + 1).trim(), content); 
 }
 
 /*
@@ -195,7 +189,7 @@ const testBookOne =
             {
                 "Page": 2,
                 "Line": 1,
-                "Text": "that he really hopes he gets! He is nervous to check-"
+                "Text": "that he really hopes he gets! He is nervous to check--"
             },
             {
                 "Page": 2,
@@ -304,6 +298,43 @@ const prefixBook =
     ] 
 }
 
+/** 
+ * Test Book Six 
+ * - Word broken up (on character per line)
+ */
+const brokenWord = 
+{
+    "Title": "Broken Word Book",
+    "ISBN": "5",
+    "Content": [
+        {
+            "Page": 1,
+            "Line": 1,
+            "Text": "h-"
+        },
+        {
+            "Page": 1,
+            "Line": 2,
+            "Text": "e-"
+        },
+        {
+            "Page": 1,
+            "Line": 3,
+            "Text": "l-"
+        },
+        {
+            "Page": 1,
+            "Line": 4,
+            "Text": "l-"
+        },
+        {
+            "Page": 1,
+            "Line": 5,
+            "Text": "o!"
+        },
+    ] 
+}
+
 /*
  _   _ _   _ ___ _____   _____ _____ ____ _____ ____  
 | | | | \ | |_ _|_   _| |_   _| ____/ ___|_   _/ ___| 
@@ -341,7 +372,7 @@ if (test2result.Results.length == 1) {
 }
 
 
-// Multiple lines w/special character 
+// Test multiple lines w/special character 
 const test3result = findSearchTermInBooks("logy. He's really interested in public interest technology", [testBookOne]);
 const test3out = {
     "SearchTerm": "logy. He's really interested in public interest technology",
@@ -362,7 +393,7 @@ if (JSON.stringify(test3out) === JSON.stringify(test3result)) {
 }
 
 
-// Multiple lines (the whole book)
+// Test multiple lines (the whole book)
 const test4result = findSearchTermInBooks("Once upon a time. There was a developer named Sam who loved the intersection of " +
                         "technology, law, and sociology. He\'s really interested in public interest technology and found a " +
                         "fellowship to work at the US government called the USDC that he really hopes he gets!", [testBookOne]); 
@@ -386,7 +417,7 @@ if (JSON.stringify(test4out) === JSON.stringify(test4result)) {
     console.log("Received:", test4result);
 }
 
-// Search for part of a hyphenated work 
+// Test searching for part of a hyphenated work 
 const test5result = findSearchTermInBooks("ck-in his code", [testBookOne]); 
 const test5out = {
     "SearchTerm": "ck-in his code",
@@ -406,7 +437,7 @@ if (JSON.stringify(test5out) === JSON.stringify(test5result)) {
     console.log("Received:", test5result);
 }
 
-// Search phrase repeated over many lines 
+// Test search phrase repeated over many lines 
 const test6result = findSearchTermInBooks("having", [testBookTwo]); 
 const test6out = {
     "SearchTerm": "having",
@@ -441,7 +472,7 @@ if (JSON.stringify(test6out) === JSON.stringify(test6result)) {
     console.log("Received:", test6result);
 }
 
-// Matching text in one book but not the other 
+// Test matching text in one book but not the other 
 const test7result = findSearchTermInBooks("having", [testBookOne, testBookTwo]); 
 const test7out = test6out; 
 if (JSON.stringify(test7out) === JSON.stringify(test7result)) {
@@ -452,7 +483,7 @@ if (JSON.stringify(test7out) === JSON.stringify(test7result)) {
     console.log("Received:", test7result);
 }
 
-// Incomplete match on last line (trailing whitespace in search term but line ends in book)
+// Test incomplete match on last line (trailing whitespace in search term but line ends in book)
 const test8result = findSearchTermInBooks("it works! ", [testBookOne]); 
 const test8out = {
     "SearchTerm": "it works! ",
@@ -466,7 +497,7 @@ if (JSON.stringify(test8out) === JSON.stringify(test8result)) {
     console.log("Received:", test8result);
 }
 
-// Doesn't match last character middle of single line 
+// Test doesn't match last character in the middle of single line 
 const test9result = findSearchTermInBooks("veloz", [testBookOne]); 
 const test9out = {
     "SearchTerm": "veloz",
@@ -480,7 +511,7 @@ if (JSON.stringify(test9out) === JSON.stringify(test9result)) {
     console.log("Received:", test9result);
 }
 
-// Doesn't match last character multi-line end of line 
+// Test doesn't match last character multi-line end of line 
 const test10result = findSearchTermInBooks("hnology and found a fellowship through to work at the US government called the USDD", [testBookOne]); 
 const test10out = {
     "SearchTerm": "hnology and found a fellowship through to work at the US government called the USDD",
@@ -494,7 +525,7 @@ if (JSON.stringify(test10out) === JSON.stringify(test10result)) {
     console.log("Received:", test10result);
 }
         
-// Empty search term
+// Test empty search term
 const test11result = findSearchTermInBooks("", [testBookOne]); 
 const test11out = {
     "SearchTerm": "",
@@ -508,7 +539,7 @@ if (JSON.stringify(test11out) === JSON.stringify(test11result)) {
     console.log("Received:", test11result);
 }
 
-// Null search term
+// Test null search term
 const test12result = findSearchTermInBooks(null, [testBookOne]); 
 const test12out = {
     "SearchTerm": null,
@@ -522,7 +553,7 @@ if (JSON.stringify(test12out) === JSON.stringify(test12result)) {
     console.log("Received:", test12result);
 }
 
-// Null scanned text
+// Test null scanned text
 const test13result = findSearchTermInBooks("null", null); 
 const test13out = {
     "SearchTerm": "null",
@@ -536,7 +567,7 @@ if (JSON.stringify(test13out) === JSON.stringify(test13result)) {
     console.log("Received:", test13result);
 }
 
-// Interupted search term
+// Test interupted search term
 const test14result = findSearchTermInBooks("I hope you are having a lovely day :)", [interruptedBook]); 
 const test14out = {
     "SearchTerm": "I hope you are having a lovely day :)",
@@ -550,7 +581,7 @@ if (JSON.stringify(test14out) === JSON.stringify(test14result)) {
     console.log("Received:", test14result);
 }
 
-// Multiple matching prefixes
+// Test multiple matching prefixes
 const test15result = findSearchTermInBooks("ababc", [prefixBook]); 
 const test15out = {
     "SearchTerm": "ababc",
@@ -568,4 +599,78 @@ if (JSON.stringify(test15out) === JSON.stringify(test15result)) {
     console.log("FAIL: Test 15");
     console.log("Expected:", test15out);
     console.log("Received:", test15result);
+}
+
+// Test match starts on last character of line
+const test16result = findSearchTermInBooks("a fellowship", [testBookOne]); 
+const test16out = {
+    "SearchTerm": "a fellowship",
+    "Results": [
+        {
+            "ISBN": "0",
+            "Page": 1,
+            "Line": 3
+        }
+    ]
+};
+if (JSON.stringify(test16out) === JSON.stringify(test16result)) {
+    console.log("PASS: Test 16");
+} else {
+    console.log("FAIL: Test 16");
+    console.log("Expected:", test16out);
+    console.log("Received:", test16result);
+}
+
+// Test matching one character on end of last line 
+const test17result = findSearchTermInBooks("c", [prefixBook]); 
+const test17out = {
+    "SearchTerm": "c",
+    "Results": [
+        {
+            "ISBN": "4",
+            "Page": 1,
+            "Line": 2
+        }
+    ]
+};
+if (JSON.stringify(test17out) === JSON.stringify(test17result)) {
+    console.log("PASS: Test 17");
+} else {
+    console.log("FAIL: Test 17");
+    console.log("Expected:", test17out);
+    console.log("Received:", test17result);
+}
+
+// Test empty scanned text
+const test18result = findSearchTermInBooks("null", [emptyBook]); 
+const test18out = {
+    "SearchTerm": "null",
+    "Results": []
+};
+if (JSON.stringify(test18out) === JSON.stringify(test18result)) {
+    console.log("PASS: Test 18");
+} else {
+    console.log("FAIL: Test 18");
+    console.log("Expected:", test18out);
+    console.log("Received:", test18result);
+}
+
+// Test broken word
+const test19result = findSearchTermInBooks("hello!", [brokenWord]); 
+const test19out = {
+    "SearchTerm": "hello!",
+    "Results": [
+        {
+            "ISBN": "5",
+            "Page": 1,
+            "Line": 1
+        }
+    ]
+};
+if (JSON.stringify(test19out) === JSON.stringify(test19result)) {
+    console.log("PASS: Test 19");
+} else {
+    console.log("FAIL: Test 19");
+    console.log("Expected:", test19out);
+    console.log("Received:", test19result);
 }
